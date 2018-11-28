@@ -80,7 +80,7 @@ degC_per_bin = 1 ./ bins_per_degC;
 
 figure; hold on; grid on;
 title('Voltage sensitivty to temperature');
-plot(temps(2:end), dVdC(2:end))
+plot(temps(2:end), dVdC(2:end), 'linewidth', 2)
 
 figure; hold on; grid on;
 title('ADC bins per deg C vs temperature');
