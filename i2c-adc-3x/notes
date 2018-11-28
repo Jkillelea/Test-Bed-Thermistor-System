@@ -1,0 +1,7 @@
+Do full analysis (bins per degC, error analysis)
+
+rev2:
+    - better bypass caps (closer)
+    - separate ground planes for analog/digital
+    - EMI protection
+    - RC filter on analog inputs
