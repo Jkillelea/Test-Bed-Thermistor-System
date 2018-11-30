@@ -8,6 +8,10 @@ adc_bits      = 12;
 adc_bins      = 2^adc_bits - 1;
 volts_per_bin = Vin / adc_bins;
 
+R25 = 10e3; % Ohms
+B25 = 3435; % Kelvin
+T25 = 273.15 + 25; % 25 degC in Kelvin
+
 % Load data between Tmin and Tmax
 data = load('./thermistor_spec');
 idx  = Tmin <= data(:, 1) & data(:, 1) <= Tmax;
@@ -37,7 +41,6 @@ ideal_resistance = resistance_range(idx);
 
 fprintf('Ideal resistance %.2f kOhms\n', ideal_resistance/1000);
 
-% Try and plot only if Java UI libs are present
 f = figure; hold on; grid on;
 title('Voltage Range vs Resistor Value');
 xlabel('log_{10}(R1) Resistance (log_{10}(\Omega))');
@@ -53,7 +56,7 @@ semilogx(ideal_resistance, maxval, 'ro')
 legend('show')
 print(f, 'images/voltage_range_vs_resistor_value', '-dpng')
 
-% Calculate resolution
+% Calculate resolutions
 data          = load('./thermistor_spec');
 R1            = 18e3;                     % Chosen resistor spec
 Rth           = data(:, 2);               % Thermistor R
@@ -80,6 +83,8 @@ print(f, 'images/voltage_sensitivity_to_temperature', '-dpng')
 
 f = figure; hold on; grid on;
 title('ADC bins per deg C vs temperature');
+title('ADC bins');
+title('Degrees C');
 plot(temps(2:end), bins_per_degC(2:end), 'linewidth', 2)
 print(f, 'images/adc_bins_per_deg_C_vs_temperature', '-dpng')
 
@@ -89,62 +94,73 @@ plot(temps(2:end), degC_per_bin(2:end), 'linewidth', 2)
 print(f, 'images/deg_c_per_bin_vs_temperature', '-dpng')
 
 % Error analysis
-Rth_error = Rth .* (data(:, 4)./100);
+%% N = number of samples, t = coeff for 95% condfidence interval
+% N = 1; t = 12.71;
+% N = 3; t = 3.128;
+% N = 10; t = 2.228;
+N = 100; t = 1.984;
+
+Rth_bias = Rth .* (data(:, 4)./100); % Deviation from correct (percent err times ohms)
 R1_error  = R1 * 0.01; % 1% error
 Vin_error = 0.001;     % 1mV? TODO
+Vout_error = 0.004 .* Vout; % (-0.6% to +0.1%) + 1 mV noise
+Vout_noise = 0.001;     % 1 mV
+B25_error = 0.01 * B25; % 1%, Kelvin
+R25_error = 0.01 * R25; % 1%, Ohms
 
-dVoutdVin = Rth ./ (Rth + R1);
-dVoutdRth = Vin ./ (Rth + R1) - Vin .* Rth ./ ((Rth + R1).^2);
-dVoutdR1  = - Rth .* Vin ./ ((Rth + R1).^2);
+dRthdVin  = -R1 ./ (Vout .* (Vin./Vout - 1).^2);
+dRthdVout = R1*Vin ./ ((Vin./Vout - 1).^2 .* Vout.^2);
+dRthdR1   = (Vin./Vout - 1).^-1;
 
-f = figure; hold on; grid on;
-subplot(1, 2, 1);
-title('Rth percent error over temperature');
-xlabel('temperature');
-ylabel('percent error');
-plot(temps, data(:, 4));
-subplot(1, 2, 2);
-plot(temps, Rth_error);
-title('Rth percent error over temperature');
-xlabel('temperature');
-ylabel('Rth error (ohms)');
+% Rth uncertainty
+Rth_bias_err = sqrt((dRthdVin  .* Vin_error).^2 ...
+                  + (dRthdVout .* Vout_error).^2 ...
+                  + (dRthdR1   .* R1_error).^2) ...
+                  + abs(Rth_bias);
 
-f = figure; hold on; grid on;
-subplot(2, 2, 1);
-plot(temps, dVoutdRth)
-subplot(2, 2, 2);
-plot(temps, Rth_error)
-subplot(2, 2, 3);
-plot(temps, dVoutdRth .* Rth_error)
+Rth_rand_err = abs(dRthdVout .* Vout_noise);
 
+Rth_Unc = t*Rth_rand_err/sqrt(N) + Rth_bias_err;
 
 f = figure; hold on; grid on;
-title('Rth over temperature')
-xlabel('Temperature');
-ylabel('Rth');
-errorbar(temps, Rth, Rth_error, 'linewidth', 2);
-print(f, 'images/rth_over_temperature', '-dpng');
+title(sprintf('Rth uncertainty vs Rth (normalized), N=%d', N))
+xlabel('Thermistor Resistance (Ohms)');
+ylabel('Thermistor Uncertainty (Percent)');
+plot(Rth, 100*Rth_Unc./Rth, 'linewidth', 2)
+print(f, sprintf('images/rth_uncertainty_vs_rth_normalized_N%d', N), '-dpng')
 
-% RMS of sensitivity to terms times uncertainty in each term
-Vout_uncertainty = sqrt((dVoutdVin .* Vin_error).^2  ...
-                      + (dVoutdR1  .* R1_error ).^2  ...
-                      + (dVoutdRth .* Rth_error).^2);
+
+% Temperature error
+% Emperical fit
+T = @(Rth) (1/T25 + log(Rth/R25)/B25).^-1 - 273.15;
+
+% Sensitivities
+dTdB25 = log(Rth/R25) ./ (B25^2 * (1/T25 + log(Rth/R25)/B25).^2);
+dTdR25 = 1            ./ (B25*R25*(1/T25 + log(Rth/R25)/B25).^2);
+dTdRth = -1           ./ (B25*R25*(1/T25 + log(Rth/R25)/B25).^2);
+
+% Temperature Uncertainty
+T_bias_err = sqrt((dTdB25 .* B25_error).^2 ...
+                + (dTdR25 .* R25_error).^2 ...
+                + (dTdRth .* Rth_bias_err  ).^2);
+
+T_rand_err = abs(dTdRth .* Rth_rand_err);
+
+T_Unc = t*T_rand_err/sqrt(N) + T_bias_err;
 
 f = figure; hold on; grid on;
-title('Vout Uncertainty over Temperature');
-xlabel('Temperature');
-ylabel('Vout Uncertainty');
-plot(temps, Vout_uncertainty, 'linewidth', 2)
-print(f, 'images/vout_uncertainty', '-dpng');
+title(sprintf('Temperature uncertainty vs Temperature, N=%d', N))
+xlabel('Temperature (deg C)');
+ylabel('Temperature Uncertainty (deg C)');
+plot(temps, T_Unc, 'linewidth', 2)
+print(f, sprintf('images/temp_uncertainty_vs_temp_N%d', N), '-dpng')
 
-p = polyfit(temps, Vout, 4);
-g = @(x) p(1) * x.^4 + p(2) * x.^3 + p(3) * x.^2 + p(4) * x + p(5);
 
-f = figure; hold on; grid on;
-title('Vout over Temperature curve fit');
-xlabel('Temperature');
-ylabel('Vout');
-plot(temps, Vout, 'linewidth', 2)
-plot(temps, g(temps), 'linewidth', 2)
-print(f, 'images/vout_vs_temp_curve', '-dpng');
-
+% Sanity checks
+assert(N > 0);
+assert(all(Rth_bias_err > 0), 'Rth_bias < 0');
+assert(all(Rth_rand_err > 0), 'Rth_rand < 0');
+assert(all(Rth_Unc > 0), 'Rth_Unc < 0');
+assert(all(T_bias_err > 0), 'T_bias < 0');
+assert(all(T_rand_err > 0), 'T_rand < 0');
+assert(all(T_Unc > 0), 'T_Unc < 0');
