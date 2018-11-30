@@ -95,18 +95,18 @@ print(f, 'images/deg_c_per_bin_vs_temperature', '-dpng')
 
 % Error analysis
 %% N = number of samples, t = coeff for 95% condfidence interval
-% N = 1; t = 12.71;
+N = 1; t = 12.71;
 % N = 3; t = 3.128;
 % N = 10; t = 2.228;
-N = 100; t = 1.984;
+% N = 100; t = 1.984;
 
-Rth_bias = Rth .* (data(:, 4)./100); % Deviation from correct (percent err times ohms)
-R1_error  = R1 * 0.01; % 1% error
-Vin_error = 0.001;     % 1mV? TODO
+Rth_bias   = Rth .* (data(:, 4)./100); % Deviation from correct (percent err times ohms)
+R1_error   = R1 * 0.01; % 1% error
+Vin_error  = 0.001;     % 1mV? TODO
 Vout_error = 0.004 .* Vout; % (-0.6% to +0.1%) + 1 mV noise
 Vout_noise = 0.001;     % 1 mV
-B25_error = 0.01 * B25; % 1%, Kelvin
-R25_error = 0.01 * R25; % 1%, Ohms
+B25_error  = 0.01 * B25; % 1%, Kelvin
+R25_error  = 0.01 * R25; % 1%, Ohms
 
 dRthdVin  = -R1 ./ (Vout .* (Vin./Vout - 1).^2);
 dRthdVout = R1*Vin ./ ((Vin./Vout - 1).^2 .* Vout.^2);
@@ -153,6 +153,8 @@ title(sprintf('Temperature uncertainty vs Temperature, N=%d', N))
 xlabel('Temperature (deg C)');
 ylabel('Temperature Uncertainty (deg C)');
 plot(temps, T_Unc, 'linewidth', 2)
+plot([Tmin Tmin], [min(T_Unc) max(T_Unc)], 'r');
+plot([Tmax Tmax], [min(T_Unc) max(T_Unc)], 'r');
 print(f, sprintf('images/temp_uncertainty_vs_temp_N%d', N), '-dpng')
 
 
